@@ -306,7 +306,8 @@ with tempfile.TemporaryDirectory(dir=DOWNLOADS) as d2:
 
   # remove read-only attribute
   target = dst / "msdia140.dll"
-  target.chmod(stat.S_IWRITE)
+  if target.exists():
+    target.chmod(stat.S_IWRITE)
 
   src = Path(d2) / "Program Files/Microsoft Visual Studio 14.0/DIA SDK/bin" / msdia
   src.replace(target)
