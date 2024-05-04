@@ -229,7 +229,7 @@ sdk_packages = [
   #"Universal CRT Redistributable-x86_en-us.msi",
 ]
 
-with tempfile.TemporaryDirectory() as d:
+with tempfile.TemporaryDirectory(dir=DOWNLOADS) as d:
   dst = Path(d)
 
   sdk_pkg = packages[sdk_pid][0]
@@ -278,7 +278,7 @@ for payload in dbg["payloads"]:
 
 msi = DOWNLOADS / DOWNLOAD_FOLDER / first(dbg["payloads"], lambda p: p["fileName"].endswith(".msi"))["fileName"]
 
-with tempfile.TemporaryDirectory() as d2:
+with tempfile.TemporaryDirectory(dir=DOWNLOADS) as d2:
   subprocess.check_call(["msiexec.exe", "/a", str(msi), "/quiet", "/qn", f"TARGETDIR={d2}"])
   for f in first(Path(d2).glob("System*"), lambda x: True).iterdir():
     f.replace(dst / f.name)
