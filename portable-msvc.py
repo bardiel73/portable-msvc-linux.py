@@ -279,8 +279,9 @@ for payload in dbg["payloads"]:
 msi = DOWNLOADS / DOWNLOAD_FOLDER / first(dbg["payloads"], lambda p: p["fileName"].endswith(".msi"))["fileName"]
 
 with tempfile.TemporaryDirectory(dir=DOWNLOADS) as d2:
-  subprocess.check_call(["msiexec.exe", "/a", str(msi), "/quiet", "/qn", f"TARGETDIR={d2}"])
-  for f in first(Path(d2).glob("System*"), lambda x: True).iterdir():
+  d2 = Path(d2)
+  subprocess.check_call(["msiexec.exe", "/a", str(msi), "/quiet", "/qn", f"TARGETDIR={d2.resolve()}"])
+  for f in first(d2.glob("System*"), lambda x: True).iterdir():
     f.replace(dst / f.name)
 
 
@@ -298,7 +299,8 @@ for payload in dia["payloads"]:
 msi = DOWNLOADS / DOWNLOAD_FOLDER / first(dia["payloads"], lambda p: p["fileName"].endswith(".msi"))["fileName"]
 
 with tempfile.TemporaryDirectory(dir=DOWNLOADS) as d2:
-  subprocess.check_call(["msiexec.exe", "/a", str(msi), "/quiet", "/qn", f"TARGETDIR={d2}"])
+  d2 = Path(d2)
+  subprocess.check_call(["msiexec.exe", "/a", str(msi), "/quiet", "/qn", f"TARGETDIR={d2.resolve()}"])
 
   if HOST == "x86": msdia = "msdia140.dll"
   elif HOST == "x64": msdia = "amd64/msdia140.dll"
@@ -309,7 +311,7 @@ with tempfile.TemporaryDirectory(dir=DOWNLOADS) as d2:
   if target.exists():
     target.chmod(stat.S_IWRITE)
 
-  src = Path(d2) / "Program Files/Microsoft Visual Studio 14.0/DIA SDK/bin" / msdia
+  src = d2 / "Program Files/Microsoft Visual Studio 14.0/DIA SDK/bin" / msdia
   src.replace(target)
 
 
