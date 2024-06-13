@@ -326,11 +326,11 @@ for f in ["Catalogs", "DesignTime", f"bin/{sdkv}/chpe", f"Lib/{sdkv}/ucrt_enclav
   shutil.rmtree(OUTPUT / "Windows Kits/10" / f, ignore_errors=True)
 for arch in ["x86", "x64", "arm", "arm64"]:
   if arch != TARGET:
-    shutil.rmtree(OUTPUT / "Windows Kits/10/Lib" / sdkv / "ucrt" / arch)
-    shutil.rmtree(OUTPUT / "Windows Kits/10/Lib" / sdkv / "um" / arch)
+    shutil.rmtree(OUTPUT / "Windows Kits/10/Lib" / sdkv / "ucrt" / arch, ignore_errors=True)
+    shutil.rmtree(OUTPUT / "Windows Kits/10/Lib" / sdkv / "um" / arch, ignore_errors=True)
   if arch != HOST:
     shutil.rmtree(OUTPUT / "VC/Tools/MSVC" / msvcv / f"bin/Host{arch}", ignore_errors=True)
-    shutil.rmtree(OUTPUT / "Windows Kits/10/bin" / sdkv / arch)
+    shutil.rmtree(OUTPUT / "Windows Kits/10/bin" / sdkv / arch, ignore_errors=True)
 
 # executable that is collecting & sending telemetry every time cl/link runs
 (OUTPUT / "VC/Tools/MSVC" / msvcv / f"bin/Host{HOST}/{TARGET}/vctip.exe").unlink(missing_ok=True)
