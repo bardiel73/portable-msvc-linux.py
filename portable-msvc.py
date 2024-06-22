@@ -271,7 +271,7 @@ DOWNLOAD_FOLDER = Path("crtd")
 (DOWNLOADS / DOWNLOAD_FOLDER).mkdir(exist_ok=True)
 
 pkg = "microsoft.visualcpp.runtimedebug.14"
-dbg = first(packages[pkg], lambda p: p["chip"] == HOST)
+dbg = first(packages[pkg], lambda p: p["chip"] == TARGET)
 for payload in dbg["payloads"]:
   name = payload["fileName"]
   download_progress(payload["url"], payload["sha256"], name, DOWNLOAD_FOLDER / name)
