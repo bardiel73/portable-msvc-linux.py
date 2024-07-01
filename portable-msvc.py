@@ -15,12 +15,11 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-OUTPUT = Path("msvc")        # output folder
+OUTPUT = Path("msvc")         # output folder
 DOWNLOADS = Path("downloads") # temporary download files
 
-# other architectures may work or may not - not really tested
-HOST   = "x64" # or x86
-TARGET = "x64" # or x86, arm, arm64
+HOST   = "x64" # or x86, arm64
+TARGET = "x64" # or x86, arm64, arm (32-bit arm is not available in newer windows sdk anymore)
 
 MANIFEST_URL = "https://aka.ms/vs/17/release/channel"
 MANIFEST_PREVIEW_URL = "https://aka.ms/vs/17/pre/channel"
@@ -74,7 +73,10 @@ def get_msi_cabs(msi):
     yield msi[index-32:index+4].decode("ascii")
 
 def first(items, cond):
-  return next(item for item in items if cond(item))
+  try:
+    return next(item for item in items if cond(item))
+  except StopIteration:
+    return None
   
 
 ### parse command-line arguments
@@ -192,12 +194,18 @@ msvc_packages = [
   f"microsoft.vc.{msvc_ver}.crt.{TARGET}.store.base",
   # MSVC runtime source
   f"microsoft.vc.{msvc_ver}.crt.source.base",
-  # ASAN
-  f"microsoft.vc.{msvc_ver}.asan.headers.base",
-  f"microsoft.vc.{msvc_ver}.asan.{TARGET}.base",
-  # MSVC redist
-  #f"microsoft.vc.{msvc_ver}.crt.redist.x64.base",
+  # MSVC redist, including debug redist
+  f"microsoft.vc.{msvc_ver}.crt.redist.{TARGET}.base",
+  # DIA SDK, just to get msdia140.dll file
+  f"microsoft.visualcpp.dia.sdk"
 ]
+
+if TARGET in ["x86", "x64"]:
+  # ASAN
+  msvc_packages += [
+    f"microsoft.vc.{msvc_ver}.asan.headers.base",
+    f"microsoft.vc.{msvc_ver}.asan.{TARGET}.base",
+  ]
 
 for pkg in msvc_packages:
   p = first(packages[pkg], lambda p: p.get("language") in (None, "en-US"))
@@ -219,6 +227,8 @@ sdk_packages = [
   f"Windows SDK for Windows Store Apps Tools-x86_en-us.msi",
   # Windows SDK headers
   f"Windows SDK for Windows Store Apps Headers-x86_en-us.msi",
+  f"Windows SDK for Windows Store Apps Headers OnecoreUap-x86_en-us.msi",
+  f"Windows SDK OnecoreUap Headers x86-x86_en-us.msi",
   f"Windows SDK Desktop Headers x86-x86_en-us.msi",
   # Windows SDK libs
   f"Windows SDK for Windows Store Apps Libs-x86_en-us.msi",
@@ -241,6 +251,8 @@ with tempfile.TemporaryDirectory(dir=DOWNLOADS) as d:
   # download msi files
   for pkg in sdk_packages:
     payload = first(sdk_pkg["payloads"], lambda p: p["fileName"] == f"Installers\\{pkg}")
+    if payload is None:
+      continue
     msi.append(DOWNLOADS / pkg)
     data = download_progress(payload["url"], payload["sha256"], pkg, pkg)
     cabs += list(get_msi_cabs(data))
@@ -255,6 +267,7 @@ with tempfile.TemporaryDirectory(dir=DOWNLOADS) as d:
   # run msi installers
   for m in msi:
     subprocess.check_call(["msiexec.exe", "/a", m, "/quiet", "/qn", f"TARGETDIR={OUTPUT.resolve()}"])
+    (OUTPUT / m.name).unlink()
 
 
 ### versions
@@ -263,56 +276,30 @@ msvcv = list((OUTPUT / "VC/Tools/MSVC").glob("*"))[0].name
 sdkv = list((OUTPUT / "Windows Kits/10/bin").glob("*"))[0].name
 
 
-# place debug CRT runtime files into MSVC folder (not what real Visual Studio installer does... but is reasonable)
+# place debug CRT runtime files into MSVC bin filder (not what real Visual Studio installer does... but is reasonable)
 
 dst = OUTPUT / "VC/Tools/MSVC" / msvcv / f"bin/Host{HOST}/{TARGET}"
+src = OUTPUT / "VC/Redist/MSVC" / msvcv / "debug_nonredist" / TARGET
 
-DOWNLOAD_FOLDER = Path("crtd")
-(DOWNLOADS / DOWNLOAD_FOLDER).mkdir(exist_ok=True)
+for f in src.glob("**/*.dll"):
+  f.replace(dst / f.name)
 
-pkg = "microsoft.visualcpp.runtimedebug.14"
-dbg = first(packages[pkg], lambda p: p["chip"] == TARGET)
-for payload in dbg["payloads"]:
-  name = payload["fileName"]
-  download_progress(payload["url"], payload["sha256"], name, DOWNLOAD_FOLDER / name)
-
-msi = DOWNLOADS / DOWNLOAD_FOLDER / first(dbg["payloads"], lambda p: p["fileName"].endswith(".msi"))["fileName"]
-
-with tempfile.TemporaryDirectory(dir=DOWNLOADS) as d2:
-  d2 = Path(d2)
-  subprocess.check_call(["msiexec.exe", "/a", str(msi), "/quiet", "/qn", f"TARGETDIR={d2.resolve()}"])
-  for f in first(d2.glob("System*"), lambda x: True).iterdir():
-    f.replace(dst / f.name)
+shutil.rmtree(OUTPUT / "VC/Redist")
 
 
-# download DIA SDK and put msdia140.dll file into MSVC folder
+# move msdia140.dll file into MSVC folder
 
-DOWNLOAD_FOLDER = Path("dia")
-(DOWNLOADS / DOWNLOAD_FOLDER).mkdir(exist_ok=True)
+msdia140dll = {
+  "x86": "msdia140.dll",
+  "x64": "amd64/msdia140.dll",
+  "arm": "arm/msdia140.dll",
+  "arm64": "arm64/msdia140.dll",
+}
 
-pkg = "microsoft.visualc.140.dia.sdk.msi"
-dia = packages[pkg][0]
-for payload in dia["payloads"]:
-  name = payload["fileName"]
-  download_progress(payload["url"], payload["sha256"], name, DOWNLOAD_FOLDER / name)
+src = OUTPUT / "DIA%20SDK/bin" / msdia140dll[HOST]
+src.replace(dst / src.name)
 
-msi = DOWNLOADS / DOWNLOAD_FOLDER / first(dia["payloads"], lambda p: p["fileName"].endswith(".msi"))["fileName"]
-
-with tempfile.TemporaryDirectory(dir=DOWNLOADS) as d2:
-  d2 = Path(d2)
-  subprocess.check_call(["msiexec.exe", "/a", str(msi), "/quiet", "/qn", f"TARGETDIR={d2.resolve()}"])
-
-  if HOST == "x86": msdia = "msdia140.dll"
-  elif HOST == "x64": msdia = "amd64/msdia140.dll"
-  else: exit("unknown")
-
-  # remove read-only attribute
-  target = dst / "msdia140.dll"
-  if target.exists():
-    target.chmod(stat.S_IWRITE)
-
-  src = d2 / "Program Files/Microsoft Visual Studio 14.0/DIA SDK/bin" / msdia
-  src.replace(target)
+shutil.rmtree(OUTPUT / "DIA%20SDK")
 
 
 ### cleanup
@@ -320,8 +307,6 @@ with tempfile.TemporaryDirectory(dir=DOWNLOADS) as d2:
 shutil.rmtree(OUTPUT / "Common7", ignore_errors=True)
 for f in ["Auxiliary", f"lib/{TARGET}/store", f"lib/{TARGET}/uwp"]:
   shutil.rmtree(OUTPUT / "VC/Tools/MSVC" / msvcv / f)
-for f in OUTPUT.glob("*.msi"):
-  f.unlink()
 for f in ["Catalogs", "DesignTime", f"bin/{sdkv}/chpe", f"Lib/{sdkv}/ucrt_enclave"]:
   shutil.rmtree(OUTPUT / "Windows Kits/10" / f, ignore_errors=True)
 for arch in ["x86", "x64", "arm", "arm64"]:
