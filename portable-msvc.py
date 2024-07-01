@@ -18,8 +18,13 @@ from pathlib import Path
 OUTPUT = Path("msvc")         # output folder
 DOWNLOADS = Path("downloads") # temporary download files
 
-HOST   = "x64" # or x86, arm64
-TARGET = "x64" # or x86, arm64, arm (32-bit arm is not available in newer windows sdk anymore)
+# NOTE: not all host & target architecture combinations are supported
+
+DEFAULT_HOST = "x64"
+ALL_HOSTS    = "x64 x86 arm64".split()
+
+DEFAULT_TARGET = "x64"
+ALL_TARGETS    = "x64 x86 arm arm64".split()
 
 MANIFEST_URL = "https://aka.ms/vs/17/release/channel"
 MANIFEST_PREVIEW_URL = "https://aka.ms/vs/17/pre/channel"
@@ -87,8 +92,15 @@ ap.add_argument("--accept-license", action="store_true", help="Automatically acc
 ap.add_argument("--msvc-version", help="Get specific MSVC version")
 ap.add_argument("--sdk-version", help="Get specific Windows SDK version")
 ap.add_argument("--preview", action="store_true", help="Use preview channel for Preview versions")
-
+ap.add_argument("--target", default=DEFAULT_TARGET, help=f"Target architectures, comma separated ({','.join(ALL_TARGETS)})")
+ap.add_argument("--host", default=DEFAULT_HOST, help=f"Host architecture", choices=ALL_HOSTS)
 args = ap.parse_args()
+
+host = args.host
+targets = args.target.split(',')
+for target in targets:
+  if target not in ALL_TARGETS:
+    exit(f"Unknown {target} target architecture!")
 
 
 ### get main manifest
@@ -184,30 +196,28 @@ DOWNLOADS.mkdir(exist_ok=True)
 ### download MSVC
 
 msvc_packages = [
-  # MSVC binaries
-  f"microsoft.vc.{msvc_ver}.tools.host{HOST}.target{TARGET}.base",
-  f"microsoft.vc.{msvc_ver}.tools.host{HOST}.target{TARGET}.res.base",
-  # MSVC headers
+  f"microsoft.visualcpp.dia.sdk",
   f"microsoft.vc.{msvc_ver}.crt.headers.base",
-  # MSVC libs
-  f"microsoft.vc.{msvc_ver}.crt.{TARGET}.desktop.base",
-  f"microsoft.vc.{msvc_ver}.crt.{TARGET}.store.base",
-  # MSVC runtime source
   f"microsoft.vc.{msvc_ver}.crt.source.base",
-  # MSVC redist, including debug redist
-  f"microsoft.vc.{msvc_ver}.crt.redist.{TARGET}.base",
-  # DIA SDK, just to get msdia140.dll file
-  f"microsoft.visualcpp.dia.sdk"
+  f"microsoft.vc.{msvc_ver}.asan.headers.base",
 ]
 
-if TARGET in ["x86", "x64"]:
-  # ASAN
+for target in targets:
   msvc_packages += [
-    f"microsoft.vc.{msvc_ver}.asan.headers.base",
-    f"microsoft.vc.{msvc_ver}.asan.{TARGET}.base",
+    f"microsoft.vc.{msvc_ver}.tools.host{host}.target{target}.base",
+    f"microsoft.vc.{msvc_ver}.tools.host{host}.target{target}.res.base",
+    f"microsoft.vc.{msvc_ver}.crt.{target}.desktop.base",
+    f"microsoft.vc.{msvc_ver}.crt.{target}.store.base",
+    f"microsoft.vc.{msvc_ver}.crt.redist.{target}.base",
   ]
+  if target in ["x86", "x64"]:
+    msvc_packages += [
+      f"microsoft.vc.{msvc_ver}.asan.{target}.base",
+    ]
 
 for pkg in msvc_packages:
+  if pkg not in packages:
+    continue
   p = first(packages[pkg], lambda p: p.get("language") in (None, "en-US"))
   for payload in p["payloads"]:
     filename = payload["fileName"]
@@ -223,21 +233,19 @@ for pkg in msvc_packages:
 ### download Windows SDK
 
 sdk_packages = [
-  # Windows SDK tools (like rc.exe & mt.exe)
   f"Windows SDK for Windows Store Apps Tools-x86_en-us.msi",
-  # Windows SDK headers
   f"Windows SDK for Windows Store Apps Headers-x86_en-us.msi",
   f"Windows SDK for Windows Store Apps Headers OnecoreUap-x86_en-us.msi",
+  f"Windows SDK for Windows Store Apps Libs-x86_en-us.msi",
   f"Windows SDK OnecoreUap Headers x86-x86_en-us.msi",
   f"Windows SDK Desktop Headers x86-x86_en-us.msi",
-  # Windows SDK libs
-  f"Windows SDK for Windows Store Apps Libs-x86_en-us.msi",
-  f"Windows SDK Desktop Libs {TARGET}-x86_en-us.msi",
-  # CRT headers & libs
   f"Universal CRT Headers Libraries and Sources-x86_en-us.msi",
-  # CRT redist
-  #"Universal CRT Redistributable-x86_en-us.msi",
 ]
+
+for target in targets:
+  sdk_packages += [
+    f"Windows SDK Desktop Libs {target}-x86_en-us.msi",
+  ]
 
 with tempfile.TemporaryDirectory(dir=DOWNLOADS) as d:
   dst = Path(d)
@@ -278,13 +286,16 @@ sdkv = list((OUTPUT / "Windows Kits/10/bin").glob("*"))[0].name
 
 # place debug CRT runtime files into MSVC bin filder (not what real Visual Studio installer does... but is reasonable)
 
-dst = OUTPUT / "VC/Tools/MSVC" / msvcv / f"bin/Host{HOST}/{TARGET}"
-src = OUTPUT / "VC/Redist/MSVC" / msvcv / "debug_nonredist" / TARGET
+redist = OUTPUT / "VC/Redist"
 
-for f in src.glob("**/*.dll"):
-  f.replace(dst / f.name)
+if redist.exists():
+  src = redist / "MSVC" / msvcv / "debug_nonredist"
+  for target in targets:
+    for f in (src / target).glob("**/*.dll"):
+      dst = OUTPUT / "VC/Tools/MSVC" / msvcv / f"bin/Host{host}" / target
+      f.replace(dst / f.name)
 
-shutil.rmtree(OUTPUT / "VC/Redist")
+  shutil.rmtree(redist)
 
 
 # move msdia140.dll file into MSVC folder
@@ -296,8 +307,10 @@ msdia140dll = {
   "arm64": "arm64/msdia140.dll",
 }
 
-src = OUTPUT / "DIA%20SDK/bin" / msdia140dll[HOST]
-src.replace(dst / src.name)
+dst = OUTPUT / "VC/Tools/MSVC" / msvcv / f"bin/Host{host}"
+src = OUTPUT / "DIA%20SDK/bin" / msdia140dll[host]
+for target in targets:
+  shutil.copyfile(src, dst / target / src.name)
 
 shutil.rmtree(OUTPUT / "DIA%20SDK")
 
@@ -305,33 +318,38 @@ shutil.rmtree(OUTPUT / "DIA%20SDK")
 ### cleanup
 
 shutil.rmtree(OUTPUT / "Common7", ignore_errors=True)
-for f in ["Auxiliary", f"lib/{TARGET}/store", f"lib/{TARGET}/uwp"]:
-  shutil.rmtree(OUTPUT / "VC/Tools/MSVC" / msvcv / f)
+shutil.rmtree(OUTPUT / "VC/Tools/MSVC" / msvcv / "Auxiliary")
+for target in targets:
+  for f in [f"store", "uwp", "enclave", "onecore"]:
+    shutil.rmtree(OUTPUT / "VC/Tools/MSVC" / msvcv / "lib" / target / f, ignore_errors=True)
 for f in ["Catalogs", "DesignTime", f"bin/{sdkv}/chpe", f"Lib/{sdkv}/ucrt_enclave"]:
   shutil.rmtree(OUTPUT / "Windows Kits/10" / f, ignore_errors=True)
 for arch in ["x86", "x64", "arm", "arm64"]:
-  if arch != TARGET:
+  if arch not in targets:
     shutil.rmtree(OUTPUT / "Windows Kits/10/Lib" / sdkv / "ucrt" / arch, ignore_errors=True)
     shutil.rmtree(OUTPUT / "Windows Kits/10/Lib" / sdkv / "um" / arch, ignore_errors=True)
-  if arch != HOST:
+  if arch != host:
     shutil.rmtree(OUTPUT / "VC/Tools/MSVC" / msvcv / f"bin/Host{arch}", ignore_errors=True)
     shutil.rmtree(OUTPUT / "Windows Kits/10/bin" / sdkv / arch, ignore_errors=True)
 
 # executable that is collecting & sending telemetry every time cl/link runs
-(OUTPUT / "VC/Tools/MSVC" / msvcv / f"bin/Host{HOST}/{TARGET}/vctip.exe").unlink(missing_ok=True)
+for target in targets:
+  (OUTPUT / "VC/Tools/MSVC" / msvcv / f"bin/Host{host}/{target}/vctip.exe").unlink(missing_ok=True)
 
 
 ### setup.bat
 
-SETUP = f"""@echo off
+for target in targets:
+
+  SETUP = f"""@echo off
 
 set ROOT=%~dp0
 
 set MSVC_VERSION={msvcv}
-set MSVC_HOST=Host{HOST}
-set MSVC_ARCH={TARGET}
+set MSVC_HOST=Host{host}
+set MSVC_ARCH={target}
 set SDK_VERSION={sdkv}
-set SDK_ARCH={TARGET}
+set SDK_ARCH={target}
 
 set MSVC_ROOT=%ROOT%VC\\Tools\\MSVC\\%MSVC_VERSION%
 set SDK_INCLUDE=%ROOT%Windows Kits\\10\\Include\\%SDK_VERSION%
@@ -342,8 +360,7 @@ set PATH=%MSVC_ROOT%\\bin\\%MSVC_HOST%\\%MSVC_ARCH%;%ROOT%Windows Kits\\10\\bin\
 set INCLUDE=%MSVC_ROOT%\\include;%SDK_INCLUDE%\\ucrt;%SDK_INCLUDE%\\shared;%SDK_INCLUDE%\\um;%SDK_INCLUDE%\\winrt;%SDK_INCLUDE%\\cppwinrt
 set LIB=%MSVC_ROOT%\\lib\\%MSVC_ARCH%;%SDK_LIBS%\\ucrt\\%SDK_ARCH%;%SDK_LIBS%\\um\\%SDK_ARCH%
 """
-
-(OUTPUT / "setup.bat").write_text(SETUP)
+  (OUTPUT / f"setup_{target}.bat").write_text(SETUP)
 
 print(f"Total downloaded: {total_download>>20} MB")
 print("Done!")
