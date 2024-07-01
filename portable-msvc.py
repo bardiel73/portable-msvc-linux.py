@@ -200,6 +200,8 @@ msvc_packages = [
   f"microsoft.vc.{msvc_ver}.crt.headers.base",
   f"microsoft.vc.{msvc_ver}.crt.source.base",
   f"microsoft.vc.{msvc_ver}.asan.headers.base",
+  f"microsoft.vc.{msvc_ver}.premium.tools.{host}.base.base",
+  f"microsoft.vc.{msvc_ver}.pgo.headers.base",
 ]
 
 for target in targets:
@@ -209,6 +211,8 @@ for target in targets:
     f"microsoft.vc.{msvc_ver}.crt.{target}.desktop.base",
     f"microsoft.vc.{msvc_ver}.crt.{target}.store.base",
     f"microsoft.vc.{msvc_ver}.crt.redist.{target}.base",
+    f"microsoft.vc.{msvc_ver}.premium.tools.host{host}.target{target}.base",
+    f"microsoft.vc.{msvc_ver}.pgo.{target}.base",
   ]
   if target in ["x86", "x64"]:
     msvc_packages += [
@@ -322,6 +326,7 @@ shutil.rmtree(OUTPUT / "VC/Tools/MSVC" / msvcv / "Auxiliary")
 for target in targets:
   for f in [f"store", "uwp", "enclave", "onecore"]:
     shutil.rmtree(OUTPUT / "VC/Tools/MSVC" / msvcv / "lib" / target / f, ignore_errors=True)
+  shutil.rmtree(OUTPUT / "VC/Tools/MSVC" / msvcv / f"bin/Host{host}" / target / "onecore", ignore_errors=True)
 for f in ["Catalogs", "DesignTime", f"bin/{sdkv}/chpe", f"Lib/{sdkv}/ucrt_enclave"]:
   shutil.rmtree(OUTPUT / "Windows Kits/10" / f, ignore_errors=True)
 for arch in ["x86", "x64", "arm", "arm64"]:
