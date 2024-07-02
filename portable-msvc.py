@@ -78,10 +78,7 @@ def get_msi_cabs(msi):
     yield msi[index-32:index+4].decode("ascii")
 
 def first(items, cond):
-  try:
-    return next(item for item in items if cond(item))
-  except StopIteration:
-    return None
+  return next((item for item in items if cond(item)), None)
   
 
 ### parse command-line arguments
