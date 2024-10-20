@@ -243,10 +243,14 @@ sdk_packages = [
   f"Windows SDK for Windows Store Apps Headers-x86_en-us.msi",
   f"Windows SDK for Windows Store Apps Headers OnecoreUap-x86_en-us.msi",
   f"Windows SDK for Windows Store Apps Libs-x86_en-us.msi",
-  f"Windows SDK OnecoreUap Headers x86-x86_en-us.msi",
-  f"Windows SDK Desktop Headers x86-x86_en-us.msi",
   f"Universal CRT Headers Libraries and Sources-x86_en-us.msi",
 ]
+
+for target in ALL_TARGETS:
+  sdk_packages += [
+    f"Windows SDK Desktop Headers {target}-x86_en-us.msi",
+    f"Windows SDK OnecoreUap Headers {target}-x86_en-us.msi",
+  ]
 
 for target in targets:
   sdk_packages += [f"Windows SDK Desktop Libs {target}-x86_en-us.msi"]
