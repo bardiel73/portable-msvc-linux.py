@@ -282,7 +282,7 @@ with tempfile.TemporaryDirectory(dir=DOWNLOADS) as d:
 
   # run msi installers
   for m in msi:
-    subprocess.check_call(["msiexec.exe", "/a", m, "/quiet", "/qn", f"TARGETDIR={OUTPUT.resolve()}"])
+    subprocess.check_call(f'msiexec.exe /a "{m}" /quiet /qn TARGETDIR="{OUTPUT.resolve()}"')
     (OUTPUT / m.name).unlink()
 
 
@@ -348,6 +348,12 @@ for arch in ["x86", "x64", "arm", "arm64"]:
 for target in targets:
   (OUTPUT / "VC/Tools/MSVC" / msvcv / f"bin/Host{host}/{target}/vctip.exe").unlink(missing_ok=True)
 
+
+# extra files for nvcc
+build = OUTPUT / "VC/Auxiliary/Build"
+build.mkdir(parents=True, exist_ok=True)
+(build / "vcvarsall.bat").write_text("rem both bat files are here only for nvcc, do not call them manually")
+(build / "vcvars64.bat").touch()
 
 ### setup.bat
 
