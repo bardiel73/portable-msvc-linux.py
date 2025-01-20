@@ -64,7 +64,7 @@ def download_progress(url, check, filename):
     data = data.getvalue()
     digest = hashlib.sha256(data).hexdigest()
     if check.lower() != digest:
-      exit(f"Hash mismatch for f{pkg}")
+      sys.exit(f"Hash mismatch for f{pkg}")
     total_download += len(data)
     return data
 
@@ -97,7 +97,7 @@ host = args.host
 targets = args.target.split(',')
 for target in targets:
   if target not in ALL_TARGETS:
-    exit(f"Unknown {target} target architecture!")
+    sys.exit(f"Unknown {target} target architecture!")
 
 
 ### get main manifest
@@ -116,7 +116,7 @@ except urllib.error.URLError as err:
     except ModuleNotFoundError:
       print("ERROR: please install 'certifi' package to use Mozilla certificates")
       print("ERROR: or update your Windows certs, see instructions here: https://woshub.com/updating-trusted-root-certificates-in-windows-10/#h2_3")
-      exit()
+      sys.exit()
     print("NOTE: retrying with certifi certificates")
     ssl_context = ssl.create_default_context(cafile=certifi.where())
     manifest = json.loads(download(URL))
@@ -156,7 +156,7 @@ for pid,p in packages.items():
 if args.show_versions:
   print("MSVC versions:", " ".join(sorted(msvc.keys())))
   print("Windows SDK versions:", " ".join(sorted(sdk.keys())))
-  exit(0)
+  sys.exit(0)
 
 msvc_ver = args.msvc_version or max(sorted(msvc.keys()))
 sdk_ver = args.sdk_version or max(sorted(sdk.keys()))
@@ -165,12 +165,12 @@ if msvc_ver in msvc:
   msvc_pid = msvc[msvc_ver]
   msvc_ver = ".".join(msvc_pid.split(".")[4:-2])
 else:
-  exit(f"Unknown MSVC version: f{args.msvc_version}")
+  sys.exit(f"Unknown MSVC version: f{args.msvc_version}")
 
 if sdk_ver in sdk:
   sdk_pid = sdk[sdk_ver]
 else:
-  exit(f"Unknown Windows SDK version: f{args.sdk_version}")
+  sys.exit(f"Unknown Windows SDK version: f{args.sdk_version}")
 
 print(f"Downloading MSVC v{msvc_ver} and Windows SDK v{sdk_ver}")
 
@@ -184,7 +184,7 @@ license = resource["license"]
 if not args.accept_license:
   accept = input(f"Do you accept Visual Studio license at {license} [Y/N] ? ")
   if not accept or accept[0].lower() != "y":
-    exit(0)
+    sys.exit(0)
 
 OUTPUT.mkdir(exist_ok=True)
 DOWNLOADS.mkdir(exist_ok=True)
