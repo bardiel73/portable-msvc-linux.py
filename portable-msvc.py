@@ -143,8 +143,8 @@ msvc = {}
 sdk = {}
 
 for pid,p in packages.items():
-  if pid.startswith("Microsoft.VisualStudio.Component.VC.".lower()) and pid.endswith(".x86.x64".lower()):
-    pver = ".".join(pid.split(".")[4:6])
+  if pid.startswith("Microsoft.VC.".lower()) and pid.endswith(".Tools.HostX64.TargetX64.base".lower()):
+    pver = ".".join(pid.split(".")[2:4])
     if pver[0].isnumeric():
       msvc[pver] = pid
   elif pid.startswith("Microsoft.VisualStudio.Component.Windows10SDK.".lower()) or \
@@ -163,7 +163,7 @@ sdk_ver = args.sdk_version or max(sorted(sdk.keys()))
 
 if msvc_ver in msvc:
   msvc_pid = msvc[msvc_ver]
-  msvc_ver = ".".join(msvc_pid.split(".")[4:-2])
+  msvc_ver = ".".join(msvc_pid.split(".")[2:6])
 else:
   sys.exit(f"Unknown MSVC version: f{args.msvc_version}")
 
