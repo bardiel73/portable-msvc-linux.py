@@ -26,8 +26,9 @@ ALL_HOSTS    = "x64 x86 arm64".split()
 DEFAULT_TARGET = "x64"
 ALL_TARGETS    = "x64 x86 arm arm64".split()
 
-MANIFEST_URL = "https://aka.ms/vs/17/release/channel"
-MANIFEST_PREVIEW_URL = "https://aka.ms/vs/17/pre/channel"
+MANIFEST_URL          = "https://aka.ms/vs/17/release/channel"
+MANIFEST_PREVIEW_URL  = "https://aka.ms/vs/17/pre/channel"
+MANIFEST_INSIDERS_URL = "https://aka.ms/vs/18/insiders/channel"
 
 ssl_context = None
 
@@ -89,6 +90,7 @@ ap.add_argument("--accept-license", action="store_true", help="Automatically acc
 ap.add_argument("--msvc-version", help="Get specific MSVC version")
 ap.add_argument("--sdk-version", help="Get specific Windows SDK version")
 ap.add_argument("--preview", action="store_true", help="Use preview channel for Preview versions")
+ap.add_argument("--insiders", action="store_true", help="Use insiders channel for Insiders versions")
 ap.add_argument("--target", default=DEFAULT_TARGET, help=f"Target architectures, comma separated ({','.join(ALL_TARGETS)})")
 ap.add_argument("--host", default=DEFAULT_HOST, help=f"Host architecture", choices=ALL_HOSTS)
 args = ap.parse_args()
@@ -102,7 +104,12 @@ for target in targets:
 
 ### get main manifest
 
-URL = MANIFEST_PREVIEW_URL if args.preview else MANIFEST_URL
+if args.insiders:
+  URL = MANIFEST_INSIDERS_URL
+elif args.preview:
+  URL = MANIFEST_PREVIEW_URL
+else:
+  URL = MANIFEST_URL
 
 try:
   manifest = json.loads(download(URL))
@@ -125,7 +132,7 @@ except urllib.error.URLError as err:
 
 ### download VS manifest
 
-ITEM_NAME = "Microsoft.VisualStudio.Manifests.VisualStudioPreview" if args.preview else "Microsoft.VisualStudio.Manifests.VisualStudio"
+ITEM_NAME = "Microsoft.VisualStudio.Manifests.VisualStudioPreview" if args.preview or args.insiders else "Microsoft.VisualStudio.Manifests.VisualStudio"
 
 vs = first(manifest["channelItems"], lambda x: x["id"] == ITEM_NAME)
 payload = vs["payloads"][0]["url"]
