@@ -26,9 +26,15 @@ ALL_HOSTS    = "x64 x86 arm64".split()
 DEFAULT_TARGET = "x64"
 ALL_TARGETS    = "x64 x86 arm arm64".split()
 
-MANIFEST_URL          = "https://aka.ms/vs/17/release/channel"
-MANIFEST_PREVIEW_URL  = "https://aka.ms/vs/17/pre/channel"
-MANIFEST_INSIDERS_URL = "https://aka.ms/vs/18/insiders/channel"
+DEFAULT_VERSION = "latest"
+ALL_VERSIONS    = "2019 2022 2026 latest".split()
+
+MANIFEST_URLS = {
+  "latest": ["https://aka.ms/vs/stable/channel",     "https://aka.ms/vs/insiders/channel"   ],
+  "2026":   ["https://aka.ms/vs/18/stable/channel",  "https://aka.ms/vs/18/insiders/channel"],
+  "2022":   ["https://aka.ms/vs/17/release/channel", "https://aka.ms/vs/17/pre/channel"     ],
+  "2019":   ["https://aka.ms/vs/16/release/channel", "https://aka.ms/vs/16/pre/channel"     ],
+}
 
 ssl_context = None
 
@@ -80,7 +86,7 @@ def get_msi_cabs(msi):
 
 def first(items, cond = lambda x: True):
   return next((item for item in items if cond(item)), None)
-  
+
 
 ### parse command-line arguments
 
@@ -89,8 +95,8 @@ ap.add_argument("--show-versions", action="store_true", help="Show available MSV
 ap.add_argument("--accept-license", action="store_true", help="Automatically accept license")
 ap.add_argument("--msvc-version", help="Get specific MSVC version")
 ap.add_argument("--sdk-version", help="Get specific Windows SDK version")
-ap.add_argument("--preview", action="store_true", help="Use preview channel for Preview versions")
-ap.add_argument("--insiders", action="store_true", help="Use insiders channel for Insiders versions")
+ap.add_argument("--vs", default=DEFAULT_VERSION, help=f"Visual Studio version to use for installation", choices=ALL_VERSIONS)
+ap.add_argument("--insiders", "--preview", action="store_true", help="Use insiders/preview versions")
 ap.add_argument("--target", default=DEFAULT_TARGET, help=f"Target architectures, comma separated ({','.join(ALL_TARGETS)})")
 ap.add_argument("--host", default=DEFAULT_HOST, help=f"Host architecture", choices=ALL_HOSTS)
 args = ap.parse_args()
@@ -104,12 +110,7 @@ for target in targets:
 
 ### get main manifest
 
-if args.insiders:
-  URL = MANIFEST_INSIDERS_URL
-elif args.preview:
-  URL = MANIFEST_PREVIEW_URL
-else:
-  URL = MANIFEST_URL
+URL = MANIFEST_URLS[args.vs][args.insiders]
 
 try:
   manifest = json.loads(download(URL))
@@ -132,7 +133,7 @@ except urllib.error.URLError as err:
 
 ### download VS manifest
 
-ITEM_NAME = "Microsoft.VisualStudio.Manifests.VisualStudioPreview" if args.preview or args.insiders else "Microsoft.VisualStudio.Manifests.VisualStudio"
+ITEM_NAME = "Microsoft.VisualStudio.Manifests.VisualStudioPreview" if args.insiders else "Microsoft.VisualStudio.Manifests.VisualStudio"
 
 vs = first(manifest["channelItems"], lambda x: x["id"] == ITEM_NAME)
 payload = vs["payloads"][0]["url"]
