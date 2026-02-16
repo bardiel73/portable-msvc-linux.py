@@ -99,7 +99,12 @@ ap.add_argument("--vs", default=DEFAULT_VERSION, help=f"Visual Studio version to
 ap.add_argument("--insiders", "--preview", action="store_true", help="Use insiders/preview versions")
 ap.add_argument("--target", default=DEFAULT_TARGET, help=f"Target architectures, comma separated ({','.join(ALL_TARGETS)})")
 ap.add_argument("--host", default=DEFAULT_HOST, help=f"Host architecture", choices=ALL_HOSTS)
+ap.add_argument("--linux", action='store_true', help="Use msiextract from msitools instead of msiexec.exe")
 args = ap.parse_args()
+
+if args.linux:
+    if shutil.which("msiextract") is None:
+        sys.exit(f"Error: 'msiextract' was not found. Install 'msitools', add it to Path, try again.")
 
 host = args.host
 targets = args.target.split(',')
@@ -242,8 +247,6 @@ for pkg in sorted(msvc_packages):
           out = OUTPUT / Path(name).relative_to("Contents")
           out.parent.mkdir(parents=True, exist_ok=True)
           out.write_bytes(z.read(name))
-
-
 ### download Windows SDK
 
 sdk_packages = [
@@ -289,16 +292,24 @@ with tempfile.TemporaryDirectory(dir=DOWNLOADS) as d:
   print("Unpacking msi files...")
 
   # run msi installers
-  for m in msi:
-    subprocess.check_call(f'msiexec.exe /a "{m}" /quiet /qn TARGETDIR="{OUTPUT.resolve()}"')
-    (OUTPUT / m.name).unlink()
+  if args.linux:
+    for m in msi:
+      subprocess.check_call(['msiextract', str(m), '-C', str(OUTPUT.resolve())])
+  else:
+    for m in msi:
+      subprocess.check_call(f'msiexec.exe /a "{m}" /quiet /qn TARGETDIR="{OUTPUT.resolve()}"')
+      (OUTPUT / m.name).unlink()
 
-
+# NOTE: for the same .msi file, `msiextract` puts the extracted directory in `Program Files/DIR` and `msiexec` puts it in `DIR`. So we handle the output mismatch here.  
+if args.linux:
+  if os.path.exists(OUTPUT.resolve() / "Windows Kits"):
+    shutil.rmtree(OUTPUT.resolve() / "Windows Kits")
+  shutil.move(OUTPUT.resolve() / "Program Files" / "Windows Kits", OUTPUT.resolve())
+  shutil.rmtree(OUTPUT.resolve() / "Program Files")
 ### versions
 
 msvcv = first((OUTPUT / "VC/Tools/MSVC").glob("*")).name
 sdkv = first((OUTPUT / "Windows Kits/10/bin").glob("*")).name
-
 
 # place debug CRT runtime files into MSVC bin folder (not what real Visual Studio installer does... but is reasonable)
 # NOTE: these are Target architecture, not Host architecture binaries
@@ -353,8 +364,9 @@ for arch in ["x86", "x64", "arm", "arm64"]:
     shutil.rmtree(OUTPUT / "Windows Kits/10/bin" / sdkv / arch, ignore_errors=True)
 
 # executable that is collecting & sending telemetry every time cl/link runs
-for target in targets:
-  (OUTPUT / "VC/Tools/MSVC" / msvcv / f"bin/Host{host}/{target}/vctip.exe").unlink(missing_ok=True)
+for telemetry in OUTPUT.rglob("vctip.exe"):
+    print(f"Removing telemetry: {telemetry}")
+    telemetry.unlink()
 
 
 # extra files for nvcc
@@ -365,24 +377,49 @@ build.mkdir(parents=True, exist_ok=True)
 
 ### setup.bat
 
-for target in targets:
+if args.linux:
+  SETUP = f"""#!/bin/bash
 
-  SETUP = fr"""@echo off
+SCRIPT_DIR="$( cd "$( dirname "${{BASH_SOURCE[0]}}" )" && pwd )"
 
-set VSCMD_ARG_HOST_ARCH={host}
-set VSCMD_ARG_TGT_ARCH={target}
+export VSCMD_ARG_HOST_ARCH="{host}"
+export VSCMD_ARG_TGT_ARCH="{target}"
 
-set VCToolsVersion={msvcv}
-set WindowsSDKVersion={sdkv}\
+export VCToolsVersion="{msvcv}"
+export WindowsSDKVersion="{sdkv}"
 
-set VCToolsInstallDir=%~dp0VC\Tools\MSVC\{msvcv}\
-set WindowsSdkBinPath=%~dp0Windows Kits\10\bin\
+export VCToolsInstallDir="$SCRIPT_DIR/VC/Tools/MSVC/{msvcv}/"
+export WindowsSdkBinPath="$SCRIPT_DIR/Windows Kits/10/bin/"
 
-set PATH=%~dp0VC\Tools\MSVC\{msvcv}\bin\Host{host}\{target};%~dp0Windows Kits\10\bin\{sdkv}\{host};%~dp0Windows Kits\10\bin\{sdkv}\{host}\ucrt;%PATH%
-set INCLUDE=%~dp0VC\Tools\MSVC\{msvcv}\include;%~dp0Windows Kits\10\Include\{sdkv}\ucrt;%~dp0Windows Kits\10\Include\{sdkv}\shared;%~dp0Windows Kits\10\Include\{sdkv}\um;%~dp0Windows Kits\10\Include\{sdkv}\winrt;%~dp0Windows Kits\10\Include\{sdkv}\cppwinrt
-set LIB=%~dp0VC\Tools\MSVC\{msvcv}\lib\{target};%~dp0Windows Kits\10\Lib\{sdkv}\ucrt\{target};%~dp0Windows Kits\10\Lib\{sdkv}\um\{target}
+export PATH="$SCRIPT_DIR/VC/Tools/MSVC/{msvcv}/bin/Host{host}/{target}:$SCRIPT_DIR/Windows Kits/10/bin/{sdkv}/{host}:$SCRIPT_DIR/Windows Kits/10/bin/{sdkv}/{host}/ucrt:$PATH"
+export INCLUDE="$SCRIPT_DIR/VC/Tools/MSVC/{msvcv}/include;$SCRIPT_DIR/Windows Kits/10/Include/{sdkv}/ucrt;$SCRIPT_DIR/Windows Kits/10/Include/{sdkv}/shared;$SCRIPT_DIR/Windows Kits/10/Include/{sdkv}/um;$SCRIPT_DIR/Windows Kits/10/Include/{sdkv}/winrt;$SCRIPT_DIR/Windows Kits/10/Include/{sdkv}/cppwinrt"
+export LIB="$SCRIPT_DIR/VC/Tools/MSVC/{msvcv}/lib/{target};$SCRIPT_DIR/Windows Kits/10/Lib/{sdkv}/ucrt/{target};$SCRIPT_DIR/Windows Kits/10/Lib/{sdkv}/um/{target}"
+
+export WINEDEBUG="-all"
+
+find . -type f -name "cl.exe"
+find . -type f -name "link.exe"
 """
-  (OUTPUT / f"setup_{target}.bat").write_text(SETUP)
+  (OUTPUT / f"setup_{target}.sh").write_text(SETUP)
+else:
+  for target in targets:
+
+    SETUP = fr"""@echo off
+
+  set VSCMD_ARG_HOST_ARCH={host}
+  set VSCMD_ARG_TGT_ARCH={target}
+
+  set VCToolsVersion={msvcv}
+  set WindowsSDKVersion={sdkv}\
+
+  set VCToolsInstallDir=%~dp0VC\Tools\MSVC\{msvcv}\
+  set WindowsSdkBinPath=%~dp0Windows Kits\10\bin\
+
+  set PATH=%~dp0VC\Tools\MSVC\{msvcv}\bin\Host{host}\{target};%~dp0Windows Kits\10\bin\{sdkv}\{host};%~dp0Windows Kits\10\bin\{sdkv}\{host}\ucrt;%PATH%
+  set INCLUDE=%~dp0VC\Tools\MSVC\{msvcv}\include;%~dp0Windows Kits\10\Include\{sdkv}\ucrt;%~dp0Windows Kits\10\Include\{sdkv}\shared;%~dp0Windows Kits\10\Include\{sdkv}\um;%~dp0Windows Kits\10\Include\{sdkv}\winrt;%~dp0Windows Kits\10\Include\{sdkv}\cppwinrt
+  set LIB=%~dp0VC\Tools\MSVC\{msvcv}\lib\{target};%~dp0Windows Kits\10\Lib\{sdkv}\ucrt\{target};%~dp0Windows Kits\10\Lib\{sdkv}\um\{target}
+  """
+    (OUTPUT / f"setup_{target}.bat").write_text(SETUP)
 
 print(f"Total downloaded: {total_download>>20} MB")
 print("Done!")
